@@ -2,7 +2,6 @@
 
 require 'digest/sha1'
 require "getoptlong"
-#require 'rubygems'
 require 'zlib'
 require File.dirname(__FILE__) + '/memcacheex'
 
