@@ -219,9 +219,13 @@ class MemCacheEx < MemCache
         while line = socket.gets do
           raise_on_error_response! line
           break if line == "END\r\n"
-          if line =~ /ITEM ([\S]+) (\[.+\])/ then
+          if line =~ /ITEM ([\S]+) \[(.+)\]/ then
             name, value = $1, $2
-            stats[name] = value
+            if value =~ /([0-9]+) b; ([0-9]+) s/ then
+              stats[name]={:size => $1, :expiry => $2}
+            else
+              stats[name]={:value => value}
+            end
           end
         end
         server_items["#{server.host}:#{server.port}"] = stats
@@ -232,8 +236,33 @@ class MemCacheEx < MemCache
     server_items
   end
 
+  def get_valid_keys(slabs_id, key_limit, server_boot_time)
+    items={}
+    server_items={}
+    orig_key_limit=key_limit
+    begin
+      last_round=false
+      
+      server_items=self.get_keys(slabs_id, key_limit)
+      items=server_items[server_items.keys[0]]
+
+      last_round=true if items.size!=key_limit
+
+      key_limit=orig_key_limit
+      items.each do |name,value|
+        dprint("#{name} -> #{value[:expiry]}")
+        if !value[:expiry].nil? and value[:expiry].to_i <= Time.now.to_i and value[:expiry].to_i > server_boot_time then
+          items.delete(name)
+          dprint("Removing #{name} from set as it expired #{value[:expiry]}")
+          key_limit+=1
+        end
+      end
+    end while !last_round and items.size <orig_key_limit
+    server_items
+  end
+
   def namespace=(namespace)
     @namespace = namespace
   end
-
 end
+

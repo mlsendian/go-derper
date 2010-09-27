@@ -22,6 +22,7 @@ end
 class Leacher
   @cache=nil
   attr :server_debug_configured
+  attr_accessor :server_boot_time
    
   def set_cache(cache)
     if !cache.nil?
@@ -30,10 +31,10 @@ class Leacher
     end
   end
 
- 
   def Leacher(cache=nil)
     set_cache(cache)
     self.server_debug_configured = true
+    self.server_boot_time = boot_time
   end
 
   def open(cache=nil)
@@ -55,15 +56,9 @@ class Leacher
   end
 
   #leach will either try to fetch a key specified with -k, or determine keys through the debug functions
-  def leach(slabs_to_retrieve,key_limit,requested_key,&block)
+  #if include_expired is false, we check whether each key entry has expired or not
+  def leach(slabs_to_retrieve,key_limit,requested_key,include_expired,&block)
     servers = {}
-
-    begin
-      @cache.debug_enable if !self.server_debug_configured
-    rescue MemCacheError
-      eprint("Could not enable debug mode on server, can't leach.")
-      return false
-    end
 
     if !requested_key.nil? then
       dprint("Only fetch a single key, \"#{requested_key}\"")
@@ -88,7 +83,11 @@ class Leacher
         slabs_id = slabs_id.to_i if !slabs_id.is_a?(Integer)
         throw Exception.new("Slabs id (#{slabs_id.to_s}) must be an integer >= 0") if (!slabs_id.is_a?(Integer) or !(slabs_id > 0))
         dprint("Leach on slabs #{slabs_id}")
-        ret=@cache.get_keys(slabs_id, key_limit)
+        if include_expired then
+          ret=@cache.get_keys(slabs_id, key_limit)
+        else
+          ret=@cache.get_valid_keys(slabs_id, key_limit, server_boot_time)
+        end
         ret=ret[ret.keys[0]]
 
         @cache.namespace = nil
@@ -448,6 +447,7 @@ go-derper.rb v0.11 (c) marco@sensepost.com
 \t-t\t<comms timeout>
 \t-L\tlist all slabs
 \t-l\tleach mode <slabs_id>
+\t-X\tinclude expired keys when leaching
 \t-k\t<key-to-retrieve>
 \t-d\t<cache_content_file_to_delete>
 \t-K\t<number of keys to pull per slabs_id> (leach mode)
@@ -474,6 +474,7 @@ opt = GetoptLong.new(
   ["--stats", "-S", GetoptLong::OPTIONAL_ARGUMENT],
   ["--timeout", "-t", GetoptLong::REQUIRED_ARGUMENT],
   ["--leach", "-l", GetoptLong::OPTIONAL_ARGUMENT],
+  ["--include-expired", "-X", GetoptLong::NO_ARGUMENT],
   ["--keylimit", "-K", GetoptLong::REQUIRED_ARGUMENT],
   ["--key", "-k", GetoptLong::REQUIRED_ARGUMENT],
   ["--delete-key", "-d", GetoptLong::REQUIRED_ARGUMENT],
@@ -504,6 +505,7 @@ key_limit = 10
 output_directory = ""
 output_prefix = ""
 include_slabs_id_in_filename = false
+include_expired_keys = false
 zlib_expand = false
 fingerprint_output="multiline"
 requested_key=nil
@@ -571,6 +573,8 @@ opt.each do |opt, arg|
       mode = :leach
       mode_inputs = 0 #default
       mode_inputs = arg if !arg.nil?
+    when "--include-expired"
+      include_expired_keys = true
     when "--list-slabs"
       eprint "Only one mode allowed, trying to overwrite #{mode.id2name} mode with #{opt}", true if !mode.nil?
       mode = :list_slabs
@@ -707,13 +711,25 @@ case mode
 
 #initialise the cache object
     CACHE = MemCacheEx.new "#{server}:#{port}", :namespace => namespace, :timeout => timeout
+#need stats to figure out if items have expired; just need the starting time
+    s=Stats.new
+    s.open(CACHE)
+    boot_time = 0
+    begin
+      boot_time = s.get_field("time").to_i-s.get_field("uptime").to_i
+    rescue Exception => e
+      wprint("Could not calculate the server boot time: #{e.to_s}")
+    end
+
     l=Leacher.new
+    l.server_boot_time = boot_time
+    dprint("Using #{l.server_boot_time} as system startup")
     l.open(CACHE)
     dprint "Leaching slabs_id #{mode_inputs} for #{key_limit} keys"
     if l.canleach? then
 #start leaching. heavy-lifting of retrieving keys and values falls to class Leach. here, we just supply
 #a handler for outputting the key,val pair to disk. we also handle zlib streams, if we find them
-      l.leach(mode_inputs,key_limit,requested_key) do |slabs_id, key, flags, value|
+      l.leach(mode_inputs,key_limit,requested_key,include_expired_keys) do |slabs_id, key, flags, value|
         if !value.nil? and value.length >= 2 && zlib_expand && value[0] == 0x78 and value[1] == 0x9c then
           value = Zlib::Inflate.inflate(value)
           dprint("Inflated value is: #{value}")
