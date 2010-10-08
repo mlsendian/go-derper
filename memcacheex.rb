@@ -35,8 +35,8 @@ class MemCacheEx < MemCache
                               {"hash"=>nil},
                               {"vbucket"=>nil},#check is superfluous, as it requires further, unknown params
                               {"key"=>nil},#check is superfluous, as it requires further, unknown params
-                              {"vkey"=>nil}]#check is superfluous, as it requires further, unknown params
-                              {"bdb"=>nil}]#sign of a memcachedb server
+                              {"vkey"=>nil},#check is superfluous, as it requires further, unknown params
+                              {"bdb"=>nil},#sign of a memcachedb server
                               {"rep"=>nil}]#memcachedb server in replication mode
     @caps = []
     all_known_capabilities.each do |cap|
