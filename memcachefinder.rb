@@ -32,6 +32,9 @@ class MemcacheFinder
     @targets << targets
   end
 
+#find_addr_group takes a set of targets (in the form returned by IPAddrTargetter) and returns
+#an array of detected memcacheds in the form [{:ip=>ip,:version=>version},...]
+#it also accepts an optional callback which will be exec'ed whenever a memcached is found
   def find_addr_group(targets,port=11211,&block)
     target_storage=[]
     targets.each{|target|
@@ -54,7 +57,7 @@ class MemcacheFinder
           ip = dgram[1][3]
           if msg.size <= 8 or msg[0] != 0x01 or msg[1] != 0x03 or msg[5] != 0x01 then
 #appears to be an unknown service, not responding with the expected data. print a warning and ignore
-            puts "[warning] Packet received that does not seem to be a memcached version answer"
+            wprint "[warning] Packet received that does not seem to be a memcached version answer"
           else
 #got a reply. figure out who the sender was, save it and remove from the list we're waiting for
             version = msg[8..msg.size]
@@ -72,14 +75,18 @@ class MemcacheFinder
 
 end
 
-@@minl = INFO
-t = IPAddrTargetter.new(ARGV.join(" "))
-mf = MemcacheFinder.new
-mf.send_wait=0.0
+
+#example usage
+if __FILE__ == $0
+  @@minl = INFO
+  t = IPAddrTargetter.new(ARGV.join(" "))
+  mf = MemcacheFinder.new
+  mf.send_wait=0.0
 #mf.add_targets([{:ip=>"127.0.0.1",:addr=>"localhost"}])
-while !(g=t.get_group(2048)).empty? do
-  mf.find_addr_group(g) {|struct|
-    puts "#{struct[:ip]} speaks #{struct[:version]}"
-  }
+  while !(g=t.get_group(2048)).empty? do
+    mf.find_addr_group(g) {|struct|
+      puts "#{struct[:ip]} speaks #{struct[:version]}"
+    }
+  end
 end
 

@@ -3,6 +3,7 @@
 require 'digest/sha1'
 require "getoptlong"
 require 'zlib'
+require 'socket'
 require File.dirname(__FILE__) + '/memcacheex'
 
 
@@ -353,15 +354,19 @@ class Stats
     else
       dprint("@@header_printed = "+@@header_printed) 
     end
+    
+    hostnames = [] 
+    Socket.getaddrinfo(@cache.servers[0].host,0).each{|af, port, name, addr| hostnames << name}
+    hostnames = hostnames.uniq.join(";")
 
     if output_format == "csv" then
       if @@header_printed == false then
-        puts "Host,Version,PID,Uptime,Systime,Utime,Stime,Max Bytes,Max Item Size,Current Connections,Net Bytes Read,Net Bytes Written,Get Count,Set Count,Bytes Stored,Item Count,Total Items,Total Slabs,Stats Capabilities"
+        puts "IP,Host,Version,PID,Uptime,Systime,Utime,Stime,Max Bytes,Max Item Size,Current Connections,Net Bytes Read,Net Bytes Written,Get Count,Set Count,Bytes Stored,Item Count,Total Items,Total Slabs,Stats Capabilities"
         @@header_printed = true
       end
-      puts "#{@cache.servers[0].host}:#{@cache.servers[0].port},#{fp[:runenv][:version]},#{fp[:runenv][:pid]},"+pretty_time(fp[:runenv][:uptime])+","+pretty_time(fp[:runenv][:time])+",#{"%.2f" % fp[:runenv][:rusage_user]},#{"%.2f" % fp[:runenv][:rusage_system]},#{fp[:memory][:maxbytes]},#{fp[:memory][:item_size_max]},#{fp[:runenv][:curr_connections]},#{fp[:network][:bytes_read]},#{fp[:network][:bytes_written]},#{fp[:cache][:cmd_get]},#{fp[:cache][:cmd_set]},#{fp[:cache][:bytes]},#{fp[:cache][:curr_items]},#{fp[:cache][:total_items]},#{fp[:cache][:total_slabs]},#{fp[:runenv][:capabilities].join(" ")}"
+      puts "#{hostnames},#{@cache.servers[0].host}:#{@cache.servers[0].port},#{fp[:runenv][:version]},#{fp[:runenv][:pid]},"+pretty_time(fp[:runenv][:uptime])+","+pretty_time(fp[:runenv][:time])+",#{"%.2f" % fp[:runenv][:rusage_user]},#{"%.2f" % fp[:runenv][:rusage_system]},#{fp[:memory][:maxbytes]},#{fp[:memory][:item_size_max]},#{fp[:runenv][:curr_connections]},#{fp[:network][:bytes_read]},#{fp[:network][:bytes_written]},#{fp[:cache][:cmd_get]},#{fp[:cache][:cmd_set]},#{fp[:cache][:bytes]},#{fp[:cache][:curr_items]},#{fp[:cache][:total_items]},#{fp[:cache][:total_slabs]},#{fp[:runenv][:capabilities].join(" ")}"
     elsif output_format == "multiline" then
-      puts "#{@cache.servers[0].host}:#{@cache.servers[0].port}\n=============================="
+      puts "#{@cache.servers[0].host}:#{@cache.servers[0].port} (#{hostnames})\n=============================="
 
       puts "memcached #{fp[:runenv][:version]} (#{fp[:runenv][:pid]}) up "+pretty_time(fp[:runenv][:uptime])+", sys time "+pretty_time(fp[:runenv][:time])+", utime=#{"%.2f" % fp[:runenv][:rusage_user]}, stime=#{"%.2f" % fp[:runenv][:rusage_system]}"
       puts "Mem: Max #{pretty_mem(fp[:memory][:maxbytes])}, max item size = #{pretty_mem(fp[:memory][:item_size_max])}"
@@ -666,7 +671,7 @@ case mode
         s.open(MemCacheEx.new("#{server}", :namespace => namespace, :timeout => timeout))
         s.print_fingerprint(s.fingerprint,fingerprint_output)
       rescue Exception => e
-        puts e.to_s
+        puts "Error in fingerprint mode: #{e.to_s}"
       end
     end
   when :fingerprintfile
