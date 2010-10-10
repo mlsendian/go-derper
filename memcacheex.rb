@@ -6,6 +6,7 @@ include Debug
 
 class MemCacheEx < MemCache
   attr :version
+  attr_writer :grow_key_list, :iterations_without_valid_keys
   @caps = nil
 
   def slabs
@@ -192,28 +193,41 @@ class MemCacheEx < MemCache
     server_items
   end
 
-  def get_valid_keys(slabs_id, key_limit, server_boot_time)
+  def get_valid_keys(slabs_id, key_limit, server_boot_time, grow_key_list)
     items={}
     server_items={}
     orig_key_limit=key_limit
+
+#TODO: this var should be set from the cmdline
+    iterations_without_valid_keys=10
+    iterations = 0
     begin
-      last_round=false
+      no_more_keys=false
+
       
       server_items=self.get_keys(slabs_id, key_limit)
+      compare_time=Time.now.to_i
       items=server_items[server_items.keys[0]]
 
-      last_round=true if items.size!=key_limit
+
+      no_more_keys=true if items.size!=key_limit
 
       key_limit=orig_key_limit
       items.each do |name,value|
         dprint("#{name} -> #{value[:expiry]}")
-        if !value[:expiry].nil? and value[:expiry].to_i <= Time.now.to_i and value[:expiry].to_i > server_boot_time then
+        if !value[:expiry].nil? and value[:expiry].to_i < compare_time and value[:expiry].to_i > server_boot_time then
           items.delete(name)
-          dprint("Removing #{name} from set as it expired #{value[:expiry]}")
-          key_limit+=1
+          dprint("Removing #{name} from set as it expired #{value[:expiry]} (< #{compare_time}).")
+          if grow_key_list then
+            key_limit+=1
+          end
+        else
+          dprint("Left #{name} in set.")
         end
       end
-    end while !last_round and items.size <orig_key_limit
+      iterations += 1
+      vprint("items.size=#{items.size}, iterations=#{iterations}")
+    end while !no_more_keys and items.size <orig_key_limit and (iterations_without_valid_keys > 0  ? iterations < iterations_without_valid_keys : true)
     server_items
   end
 

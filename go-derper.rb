@@ -58,7 +58,7 @@ class Leacher
 
   #leach will either try to fetch a key specified with -k, or determine keys through the debug functions
   #if include_expired is false, we check whether each key entry has expired or not
-  def leach(slabs_to_retrieve,key_limit,requested_key,include_expired,&block)
+  def leach(slabs_to_retrieve,key_limit,requested_key,include_expired,grow_key_list,&block)
     servers = {}
 
     if !requested_key.nil? then
@@ -87,7 +87,7 @@ class Leacher
         if include_expired then
           ret=@cache.get_keys(slabs_id, key_limit)
         else
-          ret=@cache.get_valid_keys(slabs_id, key_limit, server_boot_time)
+          ret=@cache.get_valid_keys(slabs_id, key_limit, server_boot_time, grow_key_list)
         end
         ret=ret[ret.keys[0]]
 
@@ -484,8 +484,10 @@ opt = GetoptLong.new(
   ["--key", "-k", GetoptLong::REQUIRED_ARGUMENT],
   ["--delete-key", "-d", GetoptLong::REQUIRED_ARGUMENT],
   ["--regexes", "-R", GetoptLong::REQUIRED_ARGUMENT],
+  ["--max-requests-per-slab", "-Z", GetoptLong::OPTIONAL_ARGUMENT],
   ["--monitor", "-m", GetoptLong::OPTIONAL_ARGUMENT],
   ["--monitor-gap", "-M", GetoptLong::REQUIRED_ARGUMENT],
+  ["--no-grow", "-G", GetoptLong::NO_ARGUMENT],
   ["--fingerprint", "-f", GetoptLong::REQUIRED_ARGUMENT],
   ["--fingerprint-file", "-F", GetoptLong::REQUIRED_ARGUMENT],
   ["--fingerprint-output","-c", GetoptLong::REQUIRED_ARGUMENT],
@@ -515,6 +517,8 @@ zlib_expand = false
 fingerprint_output="multiline"
 requested_key=nil
 delete_key=nil
+grow_key_list=true #if a request for a set of keys fails to produce enough keys, don't increase the number of requested keys
+max_requests_per_slab=0
 regexes=[]
 
 
@@ -580,6 +584,10 @@ opt.each do |opt, arg|
       mode_inputs = arg if !arg.nil?
     when "--include-expired"
       include_expired_keys = true
+    when "--no-grow"
+      grow_key_list=false
+    when "--max-requests-per-slab"
+      max_requests_per_slab = arg.to_i
     when "--list-slabs"
       eprint "Only one mode allowed, trying to overwrite #{mode.id2name} mode with #{opt}", true if !mode.nil?
       mode = :list_slabs
@@ -734,7 +742,7 @@ case mode
     if l.canleach? then
 #start leaching. heavy-lifting of retrieving keys and values falls to class Leach. here, we just supply
 #a handler for outputting the key,val pair to disk. we also handle zlib streams, if we find them
-      l.leach(mode_inputs,key_limit,requested_key,include_expired_keys) do |slabs_id, key, flags, value|
+      l.leach(mode_inputs,key_limit,requested_key,include_expired_keys,grow_key_list) do |slabs_id, key, flags, value|
         if !value.nil? and value.length >= 2 && zlib_expand && value[0] == 0x78 and value[1] == 0x9c then
           value = Zlib::Inflate.inflate(value)
           dprint("Inflated value is: #{value}")
