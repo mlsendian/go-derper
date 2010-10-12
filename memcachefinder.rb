@@ -1,3 +1,5 @@
+#!/usr/bin/env ruby
+
 require 'socket'
 require 'ipaddrtargetter'
 require File.dirname(__FILE__) + '/debugprint'

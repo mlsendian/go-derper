@@ -448,7 +448,7 @@ go-derper.rb v0.11 (c) marco@sensepost.com
 \t-s\t<server address>
 \t-p\t<port>
 \t-n\t<namespace>
-\t-S\tstats summary mode
+\t-S\tstats summary mode (deprecated)
 \t-t\t<comms timeout>
 \t-L\tlist all slabs
 \t-l\tleach mode <slabs_id>
